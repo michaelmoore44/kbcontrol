@@ -19,10 +19,13 @@ project(kbcontrol C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-add_executable(kbcontrol kbcontrol.c)
+add_executable(kbcontrol
+        kbcontrol.c
+        terminal.c
+        terminal_commands.c
+	)
 
-pico_enable_stdio_uart(kbcontrol 1)
-pico_enable_stdio_usb(kbcontrol 0)
+
 
 target_link_libraries(kbcontrol pico_stdlib)
 
