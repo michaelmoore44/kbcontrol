@@ -12,6 +12,8 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
+#include "keycode.h"
+
 // Interface index depends on the order in configuration descriptor
 enum {
   ITF_KEYBOARD = 0,
@@ -24,6 +26,11 @@ void term_task(void *param);
 void scan_task(void *param);
 void hid_task(void *param);
 
+volatile bool bChange = false;
+volatile bool bPressed = false;
+
+uint8_t keycode[6] = { 0 };
+
 #define NUM_ROWS 6
 #define NUM_COLS 8
 
@@ -33,6 +40,15 @@ uint8_t row = 0;
 uint8_t col = 0;
 uint8_t current_state = 0;
 uint8_t scan_idx;
+
+uint8_t layer[TU_ARRAY_SIZE(keys)] = {\
+KC_NO  , KC_6   , KC_7   , KC_8   , KC_9   , KC_NO  , KC_NO  , KC_NO  ,\
+KC_LGUI, KC_Y   , KC_U   , KC_I   , KC_O   , KC_0   , KC_MINS, KC_EQL ,\
+KC_LGUI, KC_H   , KC_J   , KC_K   , KC_L   , KC_P   , KC_LBRC, KC_RBRC,\
+KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC ,\
+KC_SPC , KC_RALT, KC_NO  , KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
+KC_LSFT, KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  ,\
+};
 
 int main()
 {
@@ -73,7 +89,7 @@ int main()
     status = xTaskCreate(
                         hid_task,
                         "HID Task",
-                        1024,
+                        4096,
                         NULL,
                         tskIDLE_PRIORITY,
                         &gHidTask);
@@ -105,13 +121,64 @@ void term_task(void *param)
 {
     term_init();
 
-    print("Led Blink, FreeRTOS, USB \r\n");
+    print("\r\n\r\nKeyboard and Mouse, FreeRTOS, USB \r\n");
 
     while(true)
     {   
         terminal_task();
         vTaskDelay(10);
     }
+}
+
+void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
+{
+    //memset(codes, 0, sizeof(keys));
+    uint8_t row, col;
+    uint8_t code_count = 0;
+    uint8_t idx;
+    memset(codes, 0x00, 6);
+    *mods = 0x00;
+    for(row = 0; row < NUM_ROWS; row++)
+    {
+        for(col = 0; col < NUM_COLS; col++)
+        {
+            idx = NUM_COLS * row + col;
+            //print(" %02u,%02u-%02u,%02u\r\n", row, col, idx, key_state[idx]);
+            if(key_state[idx] == 1)
+            {
+                print("Applying Layer: idx: %u, cc %u\r\n", idx, code_count);
+                //check for modifier 
+                if(IS_MOD(layer[idx]))
+                {
+                    if(layer[idx] == KC_LCTRL)
+                        *mods |= KEYBOARD_MODIFIER_LEFTCTRL;
+                    else if(layer[idx] == KC_LSHIFT)
+                        *mods |= KEYBOARD_MODIFIER_LEFTSHIFT;
+                    else if(layer[idx] == KC_LALT)
+                        *mods |= KEYBOARD_MODIFIER_LEFTALT;
+                    else if(layer[idx] == KC_LGUI)
+                        *mods |= KEYBOARD_MODIFIER_LEFTGUI;
+                    else if(layer[idx] == KC_RCTRL)
+                        *mods |= KEYBOARD_MODIFIER_RIGHTCTRL;
+                    else if(layer[idx] == KC_RSHIFT)
+                        *mods |= KEYBOARD_MODIFIER_RIGHTSHIFT;
+                    else if(layer[idx] == KC_RALT)
+                        *mods |= KEYBOARD_MODIFIER_RIGHTALT;
+                    else if(layer[idx] == KC_RGUI)
+                        *mods |= KEYBOARD_MODIFIER_RIGHTGUI;
+                }
+                else
+                {
+                    codes[code_count++] = layer[idx];
+                }
+
+                for(int i=0; i < code_count; i++)
+                    print(" %u,", codes[i]);
+                print("\r\n");
+            }
+        }
+    }
+    //print("\r\n\r\nend..");
 }
 
 void scan_task(void *param)
@@ -182,13 +249,16 @@ void scan_task(void *param)
     gpio_put(R0_PIN, 1);
     gpio_put(R5_PIN, 0);
 
+    row = 0;
+    col = 0;
+
     while(true)
     {
         //scan all the columns for this row
         for(col = 0; col < NUM_COLS; col++)
         {
-            scan_idx = NUM_ROWS * col + row;
-            if(col == 0)current_state = (gpio_get(C0_PIN) ? 0x01 : 0x00);
+            scan_idx = (NUM_COLS * row) + col;
+                 if(col == 0)current_state = (gpio_get(C0_PIN) ? 0x01 : 0x00);
             else if(col == 1)current_state = (gpio_get(C1_PIN) ? 0x01 : 0x00);
             else if(col == 2)current_state = (gpio_get(C2_PIN) ? 0x01 : 0x00);
             else if(col == 3)current_state = (gpio_get(C3_PIN) ? 0x01 : 0x00);
@@ -203,20 +273,28 @@ void scan_task(void *param)
                 if(keys_count[scan_idx] > 6)
                 {
                     keys[scan_idx] = current_state;
+                    if(current_state == 0x01)
+                    {
+                        print("\r\n");
+                    }
                     print("Key %u", scan_idx);
                     if(current_state == 0x01)
                     {
                         print(" p ");
+                        bPressed = true;
                     }
                     else if(current_state == 0x00)
                     {
                         print(" r ");
+                        bPressed = false;
                     }
                     else
                     {
                         print(" ? ");
                     }
                     print("\r\n");
+
+                    bChange = true;
                 }
             }
             else
@@ -230,8 +308,11 @@ void scan_task(void *param)
         {
             //start over with the first row
             row = 0;
+
+            //check for a change. if there was a change, take a snapshot and indicate change
         }
 
+        //Set the row output pins
         //clear the row, and set the next one
         if(row == 0)
         {
@@ -310,12 +391,13 @@ void hid_task(void *param)
     tud_init(BOARD_TUD_RHPORT);
 
     uint32_t btn = 0;
+    uint8_t modifiers;
 
     while(1)
     {
         tud_task();
 
-        btn++;
+        //btn++; for now, we won't send any hid reports 
 
         // Remote wakeup
         if ( tud_suspended() && btn )
@@ -331,16 +413,40 @@ void hid_task(void *param)
             // use to avoid send multiple consecutive zero report for keyboard
             static bool has_key = false;
 
-            if ( btn == 500 )
+            //if ( btn == 500 )
+            if ( bChange == true )
             {
+                /*
                 uint8_t keycode[6] = { 0 };
-                keycode[0] = HID_KEY_A;
-                keycode[1] = HID_KEY_B;
-                keycode[2] = HID_KEY_C;
+                if(bPressed == true)
+                {
+                    keycode[0] = HID_KEY_P;
+                }
+                else if(bPressed == false)
+                {
+                    keycode[0] = HID_KEY_R;
+                }
+                //keycode[1] = HID_KEY_B;
+                //keycode[2] = HID_KEY_C;
+                */
+                apply_layers(keys, keycode, &modifiers);
 
-                tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+                if(modifiers > 0x00 || keycode[0] > 0x00)
+                {
+                    print("Sending: ");
+                    uint8_t index = 0;
+                    while (keycode[index] != 0x00)
+                    {
+                        print("0x%02X", keycode[index]);
+                        index++;
+                    }
+                    print("\r\n");
+                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, modifiers, keycode);
 
-                has_key = true;
+                    has_key = true;
+                }
+
+                bChange = false;
             }else
             {
                 // send empty key report if previously has key pressed
