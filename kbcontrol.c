@@ -9,10 +9,20 @@
 #include "FreeRTOSConfig.h"
 #include "task.h"
 
+#include "bsp/board.h"
+#include "tusb.h"
 
+// Interface index depends on the order in configuration descriptor
+enum {
+  ITF_KEYBOARD = 0,
+  ITF_MOUSE = 1
+};
+
+//reset_usb_boot(0,0);
 void led_task(void *param);
 void term_task(void *param);
 void scan_task(void *param);
+void hid_task(void *param);
 
 #define NUM_ROWS 6
 #define NUM_COLS 8
@@ -48,14 +58,26 @@ int main()
                         tskIDLE_PRIORITY,
                         &gTermTask);
 
+    TaskHandle_t gScanTask = NULL;
+
     status = xTaskCreate(
                         scan_task,
                         "Scan Task",
                         1024,
                         NULL,
                         tskIDLE_PRIORITY,
-                        &gTermTask);
-    
+                        &gScanTask);
+
+    TaskHandle_t gHidTask = NULL;
+
+    status = xTaskCreate(
+                        hid_task,
+                        "HID Task",
+                        1024,
+                        NULL,
+                        tskIDLE_PRIORITY,
+                        &gHidTask);
+
     vTaskStartScheduler();
 
     //should never get here
@@ -83,7 +105,7 @@ void term_task(void *param)
 {
     term_init();
 
-    print("Led Blink with FreeRTOS \r\n");
+    print("Led Blink, FreeRTOS, USB \r\n");
 
     while(true)
     {   
@@ -245,4 +267,133 @@ void scan_task(void *param)
         vTaskDelay(1);
     }
 }
+//--------------------------------------------------------------------+
+// Device callbacks
+//--------------------------------------------------------------------+
 
+// Invoked when device is mounted
+void tud_mount_cb(void)
+{
+    print("USB Mounted\r\n");
+}
+
+// Invoked when device is unmounted
+void tud_umount_cb(void)
+{
+    print("USB Unmounted\r\n");
+}
+
+// Invoked when usb bus is suspended
+// remote_wakeup_en : if host allow us  to perform remote wakeup
+// Within 7ms, device must draw an average of current less than 2.5 mA from bus
+void tud_suspend_cb(bool remote_wakeup_en)
+{
+    (void) remote_wakeup_en;
+    print("USB Suspended\r\n");
+}
+
+// Invoked when usb bus is resumed
+void tud_resume_cb(void)
+{
+    print("USB Remounted\r\n");
+}
+
+//--------------------------------------------------------------------+
+// USB HID
+//--------------------------------------------------------------------+
+
+void hid_task(void *param)
+{
+    tusb_init();
+
+    // init device stack on configured roothub port
+    tud_init(BOARD_TUD_RHPORT);
+
+    uint32_t btn = 0;
+
+    while(1)
+    {
+        tud_task();
+
+        btn++;
+
+        // Remote wakeup
+        if ( tud_suspended() && btn )
+        {
+            // Wake up host if we are in suspend mode
+            // and REMOTE_WAKEUP feature is enabled by host
+            tud_remote_wakeup();
+        }
+
+        /*------------- Keyboard -------------*/
+        if ( tud_hid_n_ready(ITF_KEYBOARD) )
+        {
+            // use to avoid send multiple consecutive zero report for keyboard
+            static bool has_key = false;
+
+            if ( btn == 500 )
+            {
+                uint8_t keycode[6] = { 0 };
+                keycode[0] = HID_KEY_A;
+                keycode[1] = HID_KEY_B;
+                keycode[2] = HID_KEY_C;
+
+                tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+
+                has_key = true;
+            }else
+            {
+                // send empty key report if previously has key pressed
+                if (has_key)
+                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+                has_key = false;
+            }
+        }
+
+        /*------------- Mouse -------------*/
+        if ( tud_hid_n_ready(ITF_MOUSE) )
+        {
+            if ( btn > 950 )
+            {
+                int8_t const delta = 5;
+
+                // no button, right + down, no scroll pan
+                tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
+
+                if ( btn == 1000 )
+                    btn = 0;
+            }
+        }
+
+        // Poll every 10ms
+        vTaskDelay(10);
+    }
+}
+
+
+// Invoked when received GET_REPORT control request
+// Application must fill buffer report's content and return its length.
+// Return zero will cause the stack to STALL request
+uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
+{
+  // TODO not Implemented
+  (void) itf;
+  (void) report_id;
+  (void) report_type;
+  (void) buffer;
+  (void) reqlen;
+
+  return 0;
+}
+
+// Invoked when received SET_REPORT control request or
+// received data on OUT endpoint ( Report ID = 0, Type = 0 )
+void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
+{
+  // TODO set LED based on CAPLOCK, NUMLOCK etc...
+  (void) itf;
+  (void) report_id;
+  (void) report_type;
+  (void) buffer;
+  (void) bufsize;
+}

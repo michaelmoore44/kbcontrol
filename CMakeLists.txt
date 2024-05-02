@@ -27,8 +27,9 @@ add_executable(${ProjectName}
         kbcontrol.c
         terminal.c
         terminal_commands.c
+        usb_descriptors.c
         ${FREERTOS_KERNEL_PATH}/event_groups.c
-	      )
+        )
 
 target_include_directories(${ProjectName} PUBLIC
         include/
@@ -38,6 +39,8 @@ target_include_directories(${ProjectName} PUBLIC
 target_link_libraries(${ProjectName}
         pico_stdlib
         FreeRTOS-Kernel-Heap4
+        tinyusb_device
+        tinyusb_board
         )
 
 # Create map/bin/hex file etc
