@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 
 #include "terminal.h"
+#include "split.h"
 
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
@@ -25,6 +26,8 @@ void led_task(void *param);
 void term_task(void *param);
 void scan_task(void *param);
 void hid_task(void *param);
+void split_tsk(void *param);
+void application_task(void *param);
 
 volatile bool bChange = false;
 volatile bool bPressed = false;
@@ -55,7 +58,6 @@ int main()
     stdio_init_all();
 
     TaskHandle_t gLEDTask = NULL;
-
     uint32_t status = xTaskCreate(
                         led_task,
                         "Led Task",
@@ -65,7 +67,6 @@ int main()
                         &gLEDTask);
 
     TaskHandle_t gTermTask = NULL;
-
     status = xTaskCreate(
                         term_task,
                         "Terminal Task",
@@ -75,7 +76,6 @@ int main()
                         &gTermTask);
 
     TaskHandle_t gScanTask = NULL;
-
     status = xTaskCreate(
                         scan_task,
                         "Scan Task",
@@ -85,7 +85,6 @@ int main()
                         &gScanTask);
 
     TaskHandle_t gHidTask = NULL;
-
     status = xTaskCreate(
                         hid_task,
                         "HID Task",
@@ -94,11 +93,56 @@ int main()
                         tskIDLE_PRIORITY,
                         &gHidTask);
 
+    TaskHandle_t gSplitTask = NULL;
+    status = xTaskCreate(
+                        split_tsk,
+                        "Split Task",
+                        1024,
+                        NULL,
+                        tskIDLE_PRIORITY,
+                        &gSplitTask);
+
+    TaskHandle_t gAppTask = NULL;
+    status = xTaskCreate(
+                        application_task,
+                        "Application Task",
+                        1024,
+                        NULL,
+                        tskIDLE_PRIORITY,
+                        &gAppTask);
+    
     vTaskStartScheduler();
 
     //should never get here
     for (;;)
     {
+    }
+}
+
+void application_task(void *param)
+{
+    uint8_t tx_msg[256];
+    uint8_t tx_msg_len;
+
+    while(true)
+    {   
+        tx_msg[0] = 'A';
+        tx_msg[1] = '5';
+        tx_msg[2] = 0x00;
+        tx_msg_len = 2;
+        split_tx_msg(tx_msg, tx_msg_len);
+        vTaskDelay(3000);
+    }
+}
+
+void split_tsk(void *param)
+{
+    split_init();
+
+    while(true)
+    {   
+        split_task();
+        vTaskDelay(10);
     }
 }
 

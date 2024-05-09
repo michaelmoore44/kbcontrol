@@ -29,6 +29,8 @@ add_executable(${ProjectName}
         terminal_commands.c
         usb_descriptors.c
         ${FREERTOS_KERNEL_PATH}/event_groups.c
+        split.c
+        cobs.c
         )
 
 target_include_directories(${ProjectName} PUBLIC
