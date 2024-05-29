@@ -31,6 +31,7 @@ add_executable(${ProjectName}
         ${FREERTOS_KERNEL_PATH}/event_groups.c
         split.c
         cobs.c
+        crc.c
         )
 
 target_include_directories(${ProjectName} PUBLIC

@@ -1,5 +1,8 @@
 
 
+#include <stdio.h>
+#include <string.h>
+
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
@@ -8,6 +11,7 @@
 #include "split.h"
 #include "terminal.h"
 #include "cobs.h"
+#include "crc.h"
 
 #define UART_ID uart1
 #define BAUD_RATE 115200
@@ -20,6 +24,9 @@
 
 #define TX_BUF_SIZE (256)
 #define RX_BUF_SIZE (256)
+#define SPLIT_BUF_SIZE (256)
+
+#define CMD_KEYS 1;
 
 queue_t tx_buf;
 uint8_t tx_buffer[TX_BUF_SIZE];
@@ -30,11 +37,17 @@ static uint8_t rx_buffer[RX_BUF_SIZE];
 static uint8_t rx_msg[RX_BUF_SIZE];
 static uint8_t rx_msg_len;
 
+static uint8_t tx_msg[256];
+static uint8_t tx_msg_len;
+
 static uint8_t enc_msg[TX_BUF_SIZE];
 static uint8_t enc_msg_len;
 
 static uint8_t dec_msg[RX_BUF_SIZE];
 static uint8_t dec_msg_len;
+
+queue_t split_buf;
+static uint8_t split_buffer[SPLIT_BUF_SIZE];
 
 // Uart interrupt handler
 void on_uart1_interrupt()
@@ -98,6 +111,7 @@ void split_init(void)
 	//initialize transmit and receive buffers
 	queue_init(&rx_buf, sizeof(rx_buffer[0]), RX_BUF_SIZE);
 	queue_init(&tx_buf, sizeof(tx_buffer[0]), TX_BUF_SIZE);
+	queue_init(&split_buf, sizeof(split_buffer[0]), SPLIT_BUF_SIZE);
 }
 
 //send the raw data over the uart
@@ -128,12 +142,72 @@ void split_tx_msg(uint8_t* msg, uint8_t msg_len)
 	enc_msg_len++;
 	split_transmit(UART_ID, enc_msg, enc_msg_len);
 }
+
+void split_tx_keys(uint8_t* keys, uint8_t msg_len)
+{
+	uint16_t crc;
+    tx_msg_len = 0;
+
+	//command
+    tx_msg[tx_msg_len] = CMD_KEYS;
+	tx_msg_len++;
+	//payload
+	memcpy(&tx_msg[tx_msg_len], keys, msg_len);
+	tx_msg_len += msg_len;
+	//crc
+	crc = crc_16(0x00, tx_msg, tx_msg_len);
+	tx_msg[tx_msg_len] = (uint8_t)(crc >> 8);
+	tx_msg_len++;
+	tx_msg[tx_msg_len] = (uint8_t)crc;
+	tx_msg_len++;
+
+	enc_msg_len = cobsEncode(tx_msg, tx_msg_len, enc_msg);
+	enc_msg[enc_msg_len] = 0x00;
+	enc_msg_len++;
+	split_transmit(UART_ID, enc_msg, enc_msg_len);
+}
 			
 
 void process_rx_msg(uint8_t* msg, uint8_t msg_len)
 {
-	print("rx: %s \r\n", msg);
+	uint8_t idx;
+	uint8_t rx_msg_len = 0;
+	uint16_t crc = (((uint16_t)msg[msg_len - 2]) << 8) | ((uint16_t)msg[msg_len - 1]);
+	uint16_t crc_check = crc_16(0x00, msg, msg_len - 2);
+
+	//check crc
+	if(crc != crc_check)
+	{
+	    print("crc: fail\r\n");
+		print("CRC      : %04X\r\n", crc);
+		print("CRC check: %04X\r\n", crc_check);
+		return;
+	}
+
+	//parse command
+    if(msg[0] == 0x01)
+    {
+		uint8_t* ch = &msg[1];
+		uint8_t idx;
+		uint8_t len = msg_len - 3;
+
+		for (idx = 0; idx < len; idx++)
+		{
+			queue_try_add(&split_buf, ch);
+			ch++;
+		}
+    }
+    else
+    {
+	    print("Unrecognized command %02X", msg[0]);
+    }
+
 	dec_msg_len = 0x00;
+}
+
+queue_t* split_get_keys_buf(void)
+{
+	return &split_buf;	
 }
 
 void split_task(void)

@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <string.h>
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
 
@@ -36,6 +37,7 @@ uint8_t keycode[6] = { 0 };
 
 #define NUM_ROWS 6
 #define NUM_COLS 8
+#define NUM_COMBINED_COLS (NUM_COLS * 2)
 
 uint8_t keys[NUM_ROWS * NUM_COLS];
 uint8_t keys_count[NUM_ROWS * NUM_COLS];
@@ -44,6 +46,13 @@ uint8_t col = 0;
 uint8_t current_state = 0;
 uint8_t scan_idx;
 
+queue_t* split_keys_buf;
+uint8_t split_keys[NUM_ROWS * NUM_COLS];
+#define NUM_SPLIT_KEYS (NUM_ROWS * NUM_COLS)
+
+uint8_t keys_combined[TU_ARRAY_SIZE(keys) * 2];
+
+/*
 uint8_t layer[TU_ARRAY_SIZE(keys)] = {\
 KC_NO  , KC_6   , KC_7   , KC_8   , KC_9   , KC_NO  , KC_NO  , KC_NO  ,\
 KC_LGUI, KC_Y   , KC_U   , KC_I   , KC_O   , KC_0   , KC_MINS, KC_EQL ,\
@@ -51,6 +60,15 @@ KC_LGUI, KC_H   , KC_J   , KC_K   , KC_L   , KC_P   , KC_LBRC, KC_RBRC,\
 KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC ,\
 KC_SPC , KC_RALT, KC_NO  , KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
 KC_LSFT, KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  ,\
+};*/
+
+uint8_t layer[TU_ARRAY_SIZE(keys) * 2] = {\
+KC_NO  , KC_NO  , KC_NO  , KC_2   , KC_3   , KC_4   , KC_5   , KC_NO  ,   KC_NO  , KC_6   , KC_7   , KC_8   , KC_9   , KC_NO  , KC_NO  , KC_NO  ,\
+KC_N   , KC_GRV , KC_1   , KC_W   , KC_E   , KC_R   , KC_T   , KC_N   ,   KC_LGUI, KC_Y   , KC_U   , KC_I   , KC_O   , KC_0   , KC_MINS, KC_EQL ,\
+KC_N   , KC_TAB , KC_Q   , KC_S   , KC_D   , KC_F   , KC_G   , KC_N   ,   KC_LGUI, KC_H   , KC_J   , KC_K   , KC_L   , KC_P   , KC_LBRC, KC_RBRC,\
+KC_ENT , KC_N   , KC_A   , KC_X   , KC_C   , KC_V   , KC_B   , KC_N   ,   KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC,\
+KC_N   , KC_ESC , KC_Z   , KC_BSPC, KC_DEL , KC_N   , KC_LCTL, KC_F   ,   KC_SPC , KC_RALT, KC_NO  , KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
+KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_LSFT,   KC_RSFT, KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  ,\
 };
 
 int main()
@@ -119,58 +137,43 @@ int main()
     }
 }
 
-void application_task(void *param)
+void combine_split(void)
 {
-    uint8_t tx_msg[256];
-    uint8_t tx_msg_len;
+    uint8_t row, col;
+    uint8_t code_count = 0;
+    uint8_t idx, j;
 
-    while(true)
-    {   
-        tx_msg[0] = 'A';
-        tx_msg[1] = '5';
-        tx_msg[2] = 0x00;
-        tx_msg_len = 2;
-        split_tx_msg(tx_msg, tx_msg_len);
-        vTaskDelay(3000);
-    }
-}
+    for(row = 0; row < NUM_ROWS; row++)
+    {
+        for(col = 0; col < NUM_COMBINED_COLS; col++)
+        {
+            idx = NUM_COMBINED_COLS * row + col;
+            if(col >= NUM_COLS)
+            {
+                j = NUM_COLS * row + (col - NUM_COLS);
+                if(keys_combined[idx] != keys[j])
+                {
+                    if(keys[j] == 1)
+                        print("Key %u,%u p\r\n", idx, j);
+                    else
+                        print("Key %u,%u r\r\n", idx, j);
+                }
 
-void split_tsk(void *param)
-{
-    split_init();
-
-    while(true)
-    {   
-        split_task();
-        vTaskDelay(10);
-    }
-}
-
-void led_task(void *param)
-{
-    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
-
-    while(true)
-    {   
-        gpio_put(LED_PIN, 1);
-        vTaskDelay(200);
-        gpio_put(LED_PIN, 0);
-        vTaskDelay(200);
-    }
-}
-
-void term_task(void *param)
-{
-    term_init();
-
-    print("\r\n\r\nKeyboard and Mouse, FreeRTOS, USB \r\n");
-
-    while(true)
-    {   
-        terminal_task();
-        vTaskDelay(10);
+                keys_combined[idx] = keys[j];
+            }
+            else
+            {
+                j = NUM_COLS * row + col;
+                if(keys_combined[idx] != keys[j])
+                {
+                    if(keys[j] == 1)
+                        print("Key %u,%u p\r\n", idx, j);
+                    else
+                        print("Key %u,%u r\r\n", idx, j);
+                }
+                keys_combined[idx] = split_keys[j];
+            }
+        }
     }
 }
 
@@ -184,9 +187,9 @@ void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
     *mods = 0x00;
     for(row = 0; row < NUM_ROWS; row++)
     {
-        for(col = 0; col < NUM_COLS; col++)
+        for(col = 0; col < NUM_COMBINED_COLS; col++)
         {
-            idx = NUM_COLS * row + col;
+            idx = NUM_COMBINED_COLS * row + col;
             //print(" %02u,%02u-%02u,%02u\r\n", row, col, idx, key_state[idx]);
             if(key_state[idx] == 1)
             {
@@ -223,6 +226,137 @@ void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
         }
     }
     //print("\r\n\r\nend..");
+}
+
+void application_task(void *param)
+{
+    uint8_t tx_msg[256];
+    uint8_t tx_msg_len;
+    uint8_t level;
+    uint8_t idx;
+    uint8_t ch;
+    uint8_t modifiers;
+
+    vTaskDelay(1000);
+
+    while(true)
+    {   
+        //if all split keys have been received
+        level = (uint8_t)queue_get_level(split_keys_buf);
+        if(level >= NUM_SPLIT_KEYS)
+        {
+            //read num split keys
+            for(idx = 0; idx < NUM_SPLIT_KEYS; idx++)
+            {
+                queue_try_remove(split_keys_buf, &ch);
+                split_keys[idx] = ch;
+            }
+            bChange = true;
+        }
+
+
+        /*------------- Keyboard -------------*/
+        if ( tud_hid_n_ready(ITF_KEYBOARD) )
+        {
+            // use to avoid send multiple consecutive zero report for keyboard
+            static bool has_key = false;
+
+            if ( bChange == true )
+            {
+                combine_split();
+                print("Applying Layers\r\n");
+                apply_layers(keys_combined, keycode, &modifiers);
+
+                if(modifiers > 0x00 || keycode[0] > 0x00)
+                {
+                    print("Sending: ");
+                    uint8_t index = 0;
+                    while (keycode[index] != 0x00)
+                    {
+                        print(" 0x%02X", keycode[index]);
+                        index++;
+                    }
+                    print("\r\n");
+                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, modifiers, keycode);
+
+                    has_key = true;
+                }
+                else
+                {
+                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+                }
+                bChange = false;
+            }
+            else
+            {
+                // send empty key report if previously has key pressed
+                if (has_key)
+                {
+                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+                }
+                has_key = false;
+            }
+        }
+
+        /*------------- Mouse -------------*/
+        /*
+        if ( tud_hid_n_ready(ITF_MOUSE) )
+        {
+            if ( btn > 950 )
+            {
+                int8_t const delta = 5;
+
+                // no button, right + down, no scroll pan
+                tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
+
+                if ( btn == 1000 )
+                    btn = 0;
+            }
+        }
+        */
+
+        vTaskDelay(10);
+    }
+}
+
+void split_tsk(void *param)
+{
+    split_init();
+    split_keys_buf = split_get_keys_buf();
+
+    while(true)
+    {   
+        split_task();
+        vTaskDelay(10);
+    }
+}
+
+void led_task(void *param)
+{
+    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
+    gpio_init(LED_PIN);
+    gpio_set_dir(LED_PIN, GPIO_OUT);
+
+    while(true)
+    {   
+        gpio_put(LED_PIN, 1);
+        vTaskDelay(200);
+        gpio_put(LED_PIN, 0);
+        vTaskDelay(200);
+    }
+}
+
+void term_task(void *param)
+{
+    term_init();
+
+    print("\r\n\r\nKeyboard and Mouse, FreeRTOS, USB \r\n");
+
+    while(true)
+    {   
+        terminal_task();
+        vTaskDelay(10);
+    }
 }
 
 void scan_task(void *param)
@@ -434,85 +568,17 @@ void hid_task(void *param)
     // init device stack on configured roothub port
     tud_init(BOARD_TUD_RHPORT);
 
-    uint32_t btn = 0;
-    uint8_t modifiers;
-
     while(1)
     {
         tud_task();
 
-        //btn++; for now, we won't send any hid reports 
 
         // Remote wakeup
-        if ( tud_suspended() && btn )
+        if ( tud_suspended())
         {
             // Wake up host if we are in suspend mode
             // and REMOTE_WAKEUP feature is enabled by host
             tud_remote_wakeup();
-        }
-
-        /*------------- Keyboard -------------*/
-        if ( tud_hid_n_ready(ITF_KEYBOARD) )
-        {
-            // use to avoid send multiple consecutive zero report for keyboard
-            static bool has_key = false;
-
-            //if ( btn == 500 )
-            if ( bChange == true )
-            {
-                /*
-                uint8_t keycode[6] = { 0 };
-                if(bPressed == true)
-                {
-                    keycode[0] = HID_KEY_P;
-                }
-                else if(bPressed == false)
-                {
-                    keycode[0] = HID_KEY_R;
-                }
-                //keycode[1] = HID_KEY_B;
-                //keycode[2] = HID_KEY_C;
-                */
-                apply_layers(keys, keycode, &modifiers);
-
-                if(modifiers > 0x00 || keycode[0] > 0x00)
-                {
-                    print("Sending: ");
-                    uint8_t index = 0;
-                    while (keycode[index] != 0x00)
-                    {
-                        print("0x%02X", keycode[index]);
-                        index++;
-                    }
-                    print("\r\n");
-                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, modifiers, keycode);
-
-                    has_key = true;
-                }
-
-                bChange = false;
-            }else
-            {
-                // send empty key report if previously has key pressed
-                if (has_key)
-                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
-                has_key = false;
-            }
-        }
-
-        /*------------- Mouse -------------*/
-        if ( tud_hid_n_ready(ITF_MOUSE) )
-        {
-            if ( btn > 950 )
-            {
-                int8_t const delta = 5;
-
-                // no button, right + down, no scroll pan
-                tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
-
-                if ( btn == 1000 )
-                    btn = 0;
-            }
         }
 
         // Poll every 10ms
