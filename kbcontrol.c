@@ -137,6 +137,29 @@ int main()
     }
 }
 
+void set_sent(uint8_t* data)
+{
+    *data |= (1<<1);
+}
+
+bool sent(uint8_t data)
+{
+    bool ret_val = false;
+    if((data >> 1) & 1)
+        ret_val = true;
+
+    return ret_val;
+}
+
+bool not_sent(uint8_t data)
+{
+    bool ret_val = true;
+    if(sent(data))
+        ret_val = false;
+
+    return ret_val;
+}
+
 void combine_split(void)
 {
     uint8_t row, col;
@@ -148,30 +171,42 @@ void combine_split(void)
         for(col = 0; col < NUM_COMBINED_COLS; col++)
         {
             idx = NUM_COMBINED_COLS * row + col;
-            if(col >= NUM_COLS)
+            if(col >= NUM_COLS) // if controller half
             {
                 j = NUM_COLS * row + (col - NUM_COLS);
-                if(keys_combined[idx] != keys[j])
+                if(keys[j] == 1)
+                    print("pause here\r\n");
+                if((keys_combined[idx] != keys[j]) && not_sent(keys_combined[idx]))
                 {
                     if(keys[j] == 1)
-                        print("Key %u,%u p\r\n", idx, j);
+                        print("coKey %u,%u p\r\n", idx, j);
                     else
-                        print("Key %u,%u r\r\n", idx, j);
+                        print("coKey %u,%u r\r\n", idx, j);
                 }
-
-                keys_combined[idx] = keys[j];
+                
+                //don't overwrite to pressed if the key has already been sent
+                //do    overwrite            if not sent or being released      
+                if(not_sent(keys_combined[idx]) || (keys[j] == 0x00))
+                {
+                    keys_combined[idx] = keys[j];
+                }
             }
-            else
+            else //if peripheral half
             {
                 j = NUM_COLS * row + col;
-                if(keys_combined[idx] != keys[j])
+                if((keys_combined[idx] != split_keys[j]) && not_sent(keys_combined[idx]))
                 {
-                    if(keys[j] == 1)
-                        print("Key %u,%u p\r\n", idx, j);
+                    if(split_keys[j] == 1)
+                        print("coKey %u,%u p\r\n", idx, j);
                     else
-                        print("Key %u,%u r\r\n", idx, j);
+                        print("coKey %u,%u r\r\n", idx, j);
                 }
-                keys_combined[idx] = split_keys[j];
+                
+                //don't overwrite to pressed if the key has already been sent
+                if(not_sent(keys_combined[idx]) || (split_keys[j] == 0x00))
+                {
+                    keys_combined[idx] = split_keys[j];
+                }
             }
         }
     }
@@ -191,7 +226,7 @@ void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
         {
             idx = NUM_COMBINED_COLS * row + col;
             //print(" %02u,%02u-%02u,%02u\r\n", row, col, idx, key_state[idx]);
-            if(key_state[idx] == 1)
+            if(key_state[idx] & 1)
             {
                 print("Applying Layer: idx: %u, cc %u\r\n", idx, code_count);
                 //check for modifier 
@@ -216,11 +251,21 @@ void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
                 }
                 else
                 {
-                    codes[code_count++] = layer[idx];
+                    if(not_sent(key_state[idx]))
+                    {
+                        codes[code_count++] = layer[idx];
+                        set_sent(&key_state[idx]);
+                    }
+                    else
+                    {
+                        print("already sent\r\n");
+                    }
                 }
 
                 for(int i=0; i < code_count; i++)
+                {
                     print(" %u,", codes[i]);
+                }
                 print("\r\n");
             }
         }
@@ -455,7 +500,7 @@ void scan_task(void *param)
                     {
                         print("\r\n");
                     }
-                    print("Key %u", scan_idx);
+                    print("scKey %u", scan_idx);
                     if(current_state == 0x01)
                     {
                         print(" p ");
