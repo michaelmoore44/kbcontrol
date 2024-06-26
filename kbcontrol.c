@@ -49,8 +49,11 @@ uint8_t scan_idx;
 queue_t* split_keys_buf;
 uint8_t split_keys[NUM_ROWS * NUM_COLS];
 #define NUM_SPLIT_KEYS (NUM_ROWS * NUM_COLS)
+#define NUM_COMBINED_KEYS (TU_ARRAY_SIZE(keys) * 2)
 
-uint8_t keys_combined[TU_ARRAY_SIZE(keys) * 2];
+#define NUM_LAYERS (2)
+
+uint8_t keys_combined[NUM_COMBINED_KEYS];
 
 /*
 uint8_t layer[TU_ARRAY_SIZE(keys)] = {\
@@ -62,14 +65,40 @@ KC_SPC , KC_RALT, KC_NO  , KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
 KC_LSFT, KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  ,\
 };*/
 
-uint8_t layer[TU_ARRAY_SIZE(keys) * 2] = {\
-KC_NO  , KC_NO  , KC_NO  , KC_2   , KC_3   , KC_4   , KC_5   , KC_NO  ,   KC_NO  , KC_6   , KC_7   , KC_8   , KC_9   , KC_NO  , KC_NO  , KC_NO  ,\
+
+
+/*
+(0xB0-DD) are not used, so I am going to use them as codes for eg. function or leader keys
+
+mouse wheel up - KC_WH_U
+mouse wheel down - KC_WH_D
+
+todo:
+make the none keys 7x_   _______
+*/
+
+
+#define _______ (KC_NO)
+#define K_FUNC  (0xB0)
+//#define K_LEADR  (0xB1)
+
+
+//                                                                      |
+uint8_t layer[TU_ARRAY_SIZE(keys) * 2 * NUM_LAYERS] = {
+_______, _______, _______, KC_2   , KC_3   , KC_4   , KC_5   , _______,   _______, KC_6   , KC_7   , KC_8   , KC_9   , _______, _______, _______,\
 KC_N   , KC_GRV , KC_1   , KC_W   , KC_E   , KC_R   , KC_T   , KC_N   ,   KC_LGUI, KC_Y   , KC_U   , KC_I   , KC_O   , KC_0   , KC_MINS, KC_EQL ,\
 KC_N   , KC_TAB , KC_Q   , KC_S   , KC_D   , KC_F   , KC_G   , KC_N   ,   KC_LGUI, KC_H   , KC_J   , KC_K   , KC_L   , KC_P   , KC_LBRC, KC_RBRC,\
-KC_ENT , KC_N   , KC_A   , KC_X   , KC_C   , KC_V   , KC_B   , KC_N   ,   KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC,\
-KC_N   , KC_ESC , KC_Z   , KC_BSPC, KC_DEL , KC_N   , KC_LCTL, KC_F   ,   KC_SPC , KC_RALT, KC_NO  , KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
-KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_LSFT,   KC_RSFT, KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  , KC_NO  ,\
-};
+KC_ENT , KC_N   , KC_A   , KC_X   , KC_C   , KC_V   , KC_B   , KC_N   ,   KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC ,\
+KC_N   , KC_ESC , KC_Z   , KC_BSPC, KC_DEL , KC_N   , KC_LCTL, K_FUNC ,   KC_SPC , KC_RALT, _______, KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
+_______, _______, _______, _______, _______, _______, _______, KC_LSFT,   KC_RSFT, _______, _______, _______, _______, _______, _______, _______,\
+_______, _______, _______, KC_F2  , KC_F3  , KC_F4  , KC_F5  , _______,   _______, KC_F6  , KC_F7  , KC_F8  , KC_F9  , _______, _______, _______,\
+_______, _______, KC_F1  , _______, _______, _______, _______, _______,   _______, _______, KC_HOME, _______, KC_END , KC_F10 , _______, _______,\
+_______, _______, _______, KC_WH_U, KC_WH_D, _______, _______, _______,   _______, KC_LEFT, KC_DOWN, KC_UP  , KC_RGHT, _______, _______, _______,\
+_______, _______, _______, _______, _______, _______, _______, _______,   _______, _______, _______, _______, _______, _______, _______, _______,\
+_______, _______, _______, _______, _______, _______, _______, _______,   _______, _______, _______, _______, _______, _______, _______, _______,\
+_______, _______, _______, _______, _______, _______, _______, _______,   _______, _______, _______, _______, _______, _______, _______, _______,\
+};//                                                                    |
+//                                                                      |
 
 int main()
 {
@@ -174,8 +203,6 @@ void combine_split(void)
             if(col >= NUM_COLS) // if controller half
             {
                 j = NUM_COLS * row + (col - NUM_COLS);
-                if(keys[j] == 1)
-                    print("pause here\r\n");
                 if((keys_combined[idx] != keys[j]) && not_sent(keys_combined[idx]))
                 {
                     if(keys[j] == 1)
@@ -185,7 +212,6 @@ void combine_split(void)
                 }
                 
                 //don't overwrite to pressed if the key has already been sent
-                //do    overwrite            if not sent or being released      
                 if(not_sent(keys_combined[idx]) || (keys[j] == 0x00))
                 {
                     keys_combined[idx] = keys[j];
@@ -220,6 +246,24 @@ void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
     uint8_t idx;
     memset(codes, 0x00, 6);
     *mods = 0x00;
+
+    bool fn_pressed = false;
+
+    //scan all keys to determine if function has been pressed
+    for(row = 0; row < NUM_ROWS; row++)
+    {
+        for(col = 0; col < NUM_COMBINED_COLS; col++)
+        {
+            idx = NUM_COMBINED_COLS * row + col;
+            if((key_state[idx] & 1) && (layer[idx] == K_FUNC))
+            {
+                fn_pressed = true;
+                print("Fn Pressed\r\n");
+            }
+        }
+    }
+
+    //determine which keys should be sent
     for(row = 0; row < NUM_ROWS; row++)
     {
         for(col = 0; col < NUM_COMBINED_COLS; col++)
@@ -228,37 +272,58 @@ void apply_layers(uint8_t* key_state, uint8_t* codes, uint8_t* mods)
             //print(" %02u,%02u-%02u,%02u\r\n", row, col, idx, key_state[idx]);
             if(key_state[idx] & 1)
             {
-                print("Applying Layer: idx: %u, cc %u\r\n", idx, code_count);
-                //check for modifier 
-                if(IS_MOD(layer[idx]))
+                //if function is pressed, and fnlayer is a key, then add code from fn layer
+                if((fn_pressed == true) && (IS_KEY(layer[idx + NUM_COMBINED_KEYS])))
                 {
-                    if(layer[idx] == KC_LCTRL)
-                        *mods |= KEYBOARD_MODIFIER_LEFTCTRL;
-                    else if(layer[idx] == KC_LSHIFT)
-                        *mods |= KEYBOARD_MODIFIER_LEFTSHIFT;
-                    else if(layer[idx] == KC_LALT)
-                        *mods |= KEYBOARD_MODIFIER_LEFTALT;
-                    else if(layer[idx] == KC_LGUI)
-                        *mods |= KEYBOARD_MODIFIER_LEFTGUI;
-                    else if(layer[idx] == KC_RCTRL)
-                        *mods |= KEYBOARD_MODIFIER_RIGHTCTRL;
-                    else if(layer[idx] == KC_RSHIFT)
-                        *mods |= KEYBOARD_MODIFIER_RIGHTSHIFT;
-                    else if(layer[idx] == KC_RALT)
-                        *mods |= KEYBOARD_MODIFIER_RIGHTALT;
-                    else if(layer[idx] == KC_RGUI)
-                        *mods |= KEYBOARD_MODIFIER_RIGHTGUI;
-                }
-                else
-                {
+                    print("Applying Fn Layer: idx: %u, code 0x%02X\r\n", (idx + NUM_COMBINED_KEYS), layer[idx + NUM_COMBINED_KEYS]);
                     if(not_sent(key_state[idx]))
                     {
-                        codes[code_count++] = layer[idx];
+                        codes[code_count++] = layer[idx + NUM_COMBINED_KEYS];
                         set_sent(&key_state[idx]);
                     }
                     else
                     {
                         print("already sent\r\n");
+                    }
+
+                }
+                else
+                {
+                    print("Applying Layer: idx: %u, cc %u\r\n", idx, code_count);
+                    //check for modifier 
+                    if(IS_MOD(layer[idx]))
+                    {
+                        if(layer[idx] == KC_LCTRL)
+                            *mods |= KEYBOARD_MODIFIER_LEFTCTRL;
+                        else if(layer[idx] == KC_LSHIFT)
+                            *mods |= KEYBOARD_MODIFIER_LEFTSHIFT;
+                        else if(layer[idx] == KC_LALT)
+                            *mods |= KEYBOARD_MODIFIER_LEFTALT;
+                        else if(layer[idx] == KC_LGUI)
+                            *mods |= KEYBOARD_MODIFIER_LEFTGUI;
+                        else if(layer[idx] == KC_RCTRL)
+                            *mods |= KEYBOARD_MODIFIER_RIGHTCTRL;
+                        else if(layer[idx] == KC_RSHIFT)
+                            *mods |= KEYBOARD_MODIFIER_RIGHTSHIFT;
+                        else if(layer[idx] == KC_RALT)
+                            *mods |= KEYBOARD_MODIFIER_RIGHTALT;
+                        else if(layer[idx] == KC_RGUI)
+                            *mods |= KEYBOARD_MODIFIER_RIGHTGUI;
+                    }
+                    else
+                    {
+                        if(not_sent(key_state[idx]))
+                        {
+                            if(IS_KEY(layer[idx]))//only send if it is an actual key
+                            {
+                                codes[code_count++] = layer[idx];
+                                set_sent(&key_state[idx]);
+                            }
+                        }
+                        else
+                        {
+                            print("already sent\r\n");
+                        }
                     }
                 }
 
