@@ -368,9 +368,6 @@ void application_task(void *param)
         /*------------- Keyboard -------------*/
         if ( tud_hid_n_ready(ITF_KEYBOARD) )
         {
-            // use to avoid send multiple consecutive zero report for keyboard
-            static bool has_key = false;
-
             if ( bChange == true )
             {
                 combine_split();
@@ -388,23 +385,14 @@ void application_task(void *param)
                     }
                     print("\r\n");
                     tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, modifiers, keycode);
-
-                    has_key = true;
+                    print("*Sent: pressed keys sent\r\n");
                 }
                 else
                 {
                     tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+                    print("*Sent: All keys released, none sent 1\r\n\r\n\r\n");
                 }
                 bChange = false;
-            }
-            else
-            {
-                // send empty key report if previously has key pressed
-                if (has_key)
-                {
-                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
-                }
-                has_key = false;
             }
         }
 
