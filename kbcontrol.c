@@ -86,10 +86,10 @@ make the none keys 7x_   _______
 //                                                                      |
 uint8_t layer[TU_ARRAY_SIZE(keys) * 2 * NUM_LAYERS] = {
 _______, _______, _______, KC_2   , KC_3   , KC_4   , KC_5   , _______,   _______, KC_6   , KC_7   , KC_8   , KC_9   , _______, _______, _______,\
-KC_N   , KC_GRV , KC_1   , KC_W   , KC_E   , KC_R   , KC_T   , KC_N   ,   KC_LGUI, KC_Y   , KC_U   , KC_I   , KC_O   , KC_0   , KC_MINS, KC_EQL ,\
-KC_N   , KC_TAB , KC_Q   , KC_S   , KC_D   , KC_F   , KC_G   , KC_N   ,   KC_LGUI, KC_H   , KC_J   , KC_K   , KC_L   , KC_P   , KC_LBRC, KC_RBRC,\
-KC_ENT , KC_N   , KC_A   , KC_X   , KC_C   , KC_V   , KC_B   , KC_N   ,   KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC ,\
-KC_N   , KC_ESC , KC_Z   , KC_BSPC, KC_DEL , KC_N   , KC_LCTL, K_FUNC ,   KC_SPC , KC_RALT, _______, KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
+KC_ESC , KC_GRV , KC_1   , KC_W   , KC_E   , KC_R   , KC_T   , KC_ESC ,   KC_ESC , KC_Y   , KC_U   , KC_I   , KC_O   , KC_0   , KC_MINS, KC_EQL ,\
+KC_LGUI, KC_TAB , KC_Q   , KC_S   , KC_D   , KC_F   , KC_G   , KC_LGUI,   KC_LGUI, KC_H   , KC_J   , KC_K   , KC_L   , KC_P   , KC_LBRC, KC_RBRC,\
+KC_ENT , KC_NO  , KC_A   , KC_X   , KC_C   , KC_V   , KC_B   , KC_ENT ,   KC_LGUI, KC_N   , KC_M   , KC_COMM, KC_DOT , KC_SCLN, KC_QUOT, KC_ESC ,\
+KC_ENT , KC_ESC , KC_Z   , KC_BSPC, KC_DEL , KC_N   , KC_LCTL, K_FUNC ,   KC_SPC , KC_RALT, _______, KC_DEL , KC_BSPC, KC_SLSH, KC_BSLS, KC_ENT ,\
 _______, _______, _______, _______, _______, _______, _______, KC_LSFT,   KC_RSFT, _______, _______, _______, _______, _______, _______, _______,\
 _______, _______, _______, KC_F2  , KC_F3  , KC_F4  , KC_F5  , _______,   _______, KC_F6  , KC_F7  , KC_F8  , KC_F9  , _______, _______, _______,\
 _______, _______, KC_F1  , _______, _______, _______, _______, _______,   _______, _______, KC_HOME, _______, KC_END , KC_F10 , _______, _______,\
@@ -448,7 +448,7 @@ void term_task(void *param)
 {
     term_init();
 
-    print("\r\n\r\nKeyboard and Mouse, FreeRTOS, USB \r\n");
+    print("\r\n\r\nUSB Keyboard and Mouse, Controller, v0.0.1\r\n");
 
     while(true)
     {   
